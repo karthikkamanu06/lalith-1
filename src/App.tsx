@@ -177,7 +177,7 @@ function AIChatbot() {
         model: "gemini-3.1-pro-preview",
         contents: [...messages.map(m => ({ role: m.role, parts: [{ text: m.text }] })), { role: 'user', parts: [{ text: userMsg }] }],
         config: {
-          systemInstruction: "You are an AI assistant for Lalith Sai Kosuru's digital marketing portfolio. You help users understand Lalith's services (SEO, Social Media, Ads, Canva, Content Writing). Be professional, helpful, and concise.",
+          systemInstruction: "You are an AI assistant for Skyreach Marketing's digital marketing portfolio. You help users understand our services (SEO, Social Media, Ads, Canva, Content Writing). Be professional, helpful, and concise. Our contact email is skyreachmarketing.11@gmail.com and our Instagram is @skyreachmarketing.11.",
         }
       });
       
@@ -215,7 +215,7 @@ function AIChatbot() {
               {messages.length === 0 && (
                 <div className="text-center text-slate-400 mt-10">
                   <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                  <p className="text-sm">Ask me about Lalith's services!</p>
+                  <p className="text-sm">Ask me about our services!</p>
                 </div>
               )}
               {messages.map((m, i) => (
@@ -602,17 +602,17 @@ export default function App() {
 
   const testimonials = [
     {
-      quote: "Lalith's social media strategy completely transformed our restaurant's online presence. We've seen a massive spike in bookings!",
+      quote: "Skyreach Marketing's social media strategy completely transformed our restaurant's online presence. We've seen a massive spike in bookings!",
       author: "Rajesh Kumar",
       company: "The Spice Garden"
     },
     {
-      quote: "Our gym's visibility on Google skyrocketed thanks to Lalith's SEO expertise. We're getting more sign-ups than ever before.",
+      quote: "Our gym's visibility on Google skyrocketed thanks to Skyreach Marketing's SEO expertise. We're getting more sign-ups than ever before.",
       author: "Sarah Johnson",
       company: "Peak Fitness"
     },
     {
-      quote: "The Facebook ad campaigns Lalith ran for our clothing brand were incredibly effective. Our ROAS has never been higher.",
+      quote: "The Facebook ad campaigns Skyreach Marketing ran for our clothing brand were incredibly effective. Our ROAS has never been higher.",
       author: "Michael Chen",
       company: "Urban Wear"
     }
@@ -623,7 +623,7 @@ export default function App() {
       {/* Navbar */}
       <nav className="fixed top-0 w-full bg-black/50 backdrop-blur-xl border-b border-white/5 z-50">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <span className="font-display text-2xl tracking-tight uppercase">Lalith Sai Kosuru</span>
+          <span className="font-display text-2xl tracking-tight uppercase">Skyreach Marketing</span>
           <div className="hidden md:flex space-x-10 text-xs font-bold uppercase tracking-widest text-slate-400">
             <a href="#about" className="hover:text-emerald-400 transition-colors">About</a>
             <a href="#services" className="hover:text-emerald-400 transition-colors">Services</a>
@@ -908,8 +908,12 @@ export default function App() {
                 </a>
                 
                 <div className="flex gap-4">
-                  {[Instagram, Facebook, Globe].map((Icon, i) => (
-                    <a key={i} href="#" className="w-14 h-14 border border-slate-200 rounded-2xl flex items-center justify-center hover:bg-black hover:text-white transition-all duration-500">
+                  {[
+                    { Icon: Instagram, href: "https://www.instagram.com/skyreachmarketing.11/" },
+                    { Icon: Facebook, href: "https://www.facebook.com/profile.php?id=61574345203399" },
+                    { Icon: Globe, href: "https://skyreachmarketing.com" }
+                  ].map(({ Icon, href }, i) => (
+                    <a key={i} href={href} target="_blank" rel="noopener noreferrer" className="w-14 h-14 border border-slate-200 rounded-2xl flex items-center justify-center hover:bg-black hover:text-white transition-all duration-500">
                       <Icon className="w-5 h-5" />
                     </a>
                   ))}
@@ -979,7 +983,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex flex-col gap-2">
             <div className="text-slate-500 text-sm">
-              © {new Date().getFullYear()} Lalith Sai Kosuru. All rights reserved.
+              © {new Date().getFullYear()} Skyreach Marketing. All rights reserved.
             </div>
             {user ? (
               <div className="flex items-center gap-3">
