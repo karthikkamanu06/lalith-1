@@ -167,6 +167,7 @@ function AIChatbot() {
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -220,10 +221,18 @@ function AIChatbot() {
   }, [messages, isLoading, isThinking]);
 
   const handleLogin = async () => {
+    setLoginError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Login failed:", err);
+      if (err.code === 'auth/popup-blocked') {
+        setLoginError("Popup blocked. Please allow popups for this site.");
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        setLoginError("Sign-in cancelled.");
+      } else {
+        setLoginError("Sign-in failed. Please try again.");
+      }
     }
   };
 
@@ -408,7 +417,7 @@ function AIChatbot() {
   }, [isOpen]);
 
   return (
-    <div className="fixed bottom-8 right-8 z-50">
+    <div className="fixed bottom-4 right-4 sm:bottom-8 sm:right-8 z-50 flex flex-col items-end">
       <audio ref={audioRef} className="hidden" />
       <AnimatePresence>
         {isOpen && (
@@ -416,7 +425,7 @@ function AIChatbot() {
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="bg-[#0f172a] border border-slate-700/50 w-[380px] h-[600px] mb-4 flex flex-col overflow-hidden shadow-2xl rounded-[2rem]"
+            className="bg-[#0f172a] border border-slate-700/50 w-[calc(100vw-2rem)] sm:w-[380px] h-[70vh] sm:h-[600px] mb-4 flex flex-col overflow-hidden shadow-2xl rounded-[2rem]"
           >
             <div className="p-4 border-b border-slate-700/50 flex items-center justify-between bg-[#1e293b]">
               <div className="flex items-center gap-2">
@@ -454,6 +463,9 @@ function AIChatbot() {
                   >
                     <LogIn className="w-4 h-4" /> Sign In with Google
                   </button>
+                  {loginError && (
+                    <p className="mt-4 text-xs text-red-500 font-medium">{loginError}</p>
+                  )}
                 </div>
               ) : isLiveMode ? (
                 <LiveVoiceChat onClose={() => setIsLiveMode(false)} />
