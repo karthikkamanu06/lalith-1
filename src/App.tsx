@@ -51,7 +51,7 @@ import {
 } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { Timestamp } from 'firebase/firestore';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 
 // Error handling helper
 enum OperationType {
@@ -153,6 +153,7 @@ function AIChatbot() {
   const [messages, setMessages] = useState<{ role: 'user' | 'model'; text: string }[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [cache, setCache] = useState<Record<string, string>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -165,6 +166,15 @@ function AIChatbot() {
     if (!input.trim() || isLoading) return;
     
     const userMsg = input.trim();
+    const normalizedMsg = userMsg.toLowerCase().trim();
+    
+    // Check cache for exact matches (simple caching)
+    if (cache[normalizedMsg]) {
+      setInput('');
+      setMessages(prev => [...prev, { role: 'user' as const, text: userMsg }, { role: 'model' as const, text: cache[normalizedMsg] }]);
+      return;
+    }
+
     setInput('');
     const newMessages = [...messages, { role: 'user' as const, text: userMsg }];
     setMessages(newMessages);
@@ -173,19 +183,26 @@ function AIChatbot() {
     try {
       const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
       
+      // Limit history to last 10 messages for efficiency
+      const history = newMessages.slice(-10).map(m => ({
+        role: m.role,
+        parts: [{ text: m.text }]
+      }));
+
       const response = await genAI.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: newMessages.map(m => ({
-          role: m.role,
-          parts: [{ text: m.text }]
-        })),
+        model: "gemini-3-flash-preview",
+        contents: history,
         config: {
           systemInstruction: "You are an AI assistant for Skyreach Marketing's digital marketing portfolio. You help users understand our services (SEO, Social Media, Ads, Canva, Content Writing). Be professional, helpful, and concise. Our contact email is skyreachmarketing.11@gmail.com and our Instagram is @skyreach.marketing.",
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
         }
       });
       
       const botText = response.text || "I'm sorry, I couldn't process that.";
       setMessages(prev => [...prev, { role: 'model', text: botText }]);
+      
+      // Cache the response
+      setCache(prev => ({ ...prev, [normalizedMsg]: botText }));
     } catch (error) {
       console.error("Chat error:", error);
       setMessages(prev => [...prev, { role: 'model', text: "Oops! Something went wrong. Please try again." }]);
@@ -195,7 +212,7 @@ function AIChatbot() {
   };
 
   return (
-    <div className="fixed bottom-8 left-8 z-50">
+    <div className="fixed bottom-8 right-8 z-50">
       <AnimatePresence>
         {isOpen && (
           <motion.div 
@@ -292,7 +309,8 @@ function MarketingInsights() {
         model: "gemini-3-flash-preview",
         contents: "What are the top 3 digital marketing trends for 2024? Provide a very brief, punchy summary.",
         config: {
-          tools: [{ googleSearch: {} }]
+          tools: [{ googleSearch: {} }],
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
         }
       });
       setInsight(response.text || "Stay ahead with data-driven strategies.");
@@ -350,6 +368,9 @@ function QuickTips() {
       const response = await genAI.models.generateContent({
         model: "gemini-3.1-flash-lite-preview",
         contents: "Give me one quick, actionable digital marketing tip for a small business owner. Max 15 words.",
+        config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+        }
       });
       setTip(response.text || "Optimize your Google Business Profile.");
     } catch (error) {
