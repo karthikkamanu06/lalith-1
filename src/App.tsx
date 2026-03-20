@@ -182,7 +182,10 @@ function AIChatbot() {
 
   // Firestore Messages Listener
   useEffect(() => {
-    if (!user || !isOpen || isLiveMode) return;
+    if (!user || !isOpen || isLiveMode) {
+      if (!user) setMessages([]); // Clear local messages if user logs out
+      return;
+    }
 
     const messagesRef = collection(db, 'users', user.uid, 'messages');
     const q = query(messagesRef, orderBy('timestamp', 'asc'), limit(50));
@@ -246,22 +249,25 @@ function AIChatbot() {
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
-    if (!user) {
-      handleLogin();
-      return;
-    }
     
     setShowSuggestions(false);
     const userMsg = text.trim();
+
+    // Optimistic UI update for user message (especially for anonymous users)
+    if (!user) {
+      setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    }
     
     try {
-      // Save User Message to Firestore
-      const messagesRef = collection(db, 'users', user.uid, 'messages');
-      await addDoc(messagesRef, {
-        role: 'user',
-        text: userMsg,
-        timestamp: serverTimestamp()
-      });
+      // Save User Message to Firestore if logged in
+      if (user) {
+        const messagesRef = collection(db, 'users', user.uid, 'messages');
+        await addDoc(messagesRef, {
+          role: 'user',
+          text: userMsg,
+          timestamp: serverTimestamp()
+        });
+      }
 
       setIsLoading(true);
       setIsThinking(true);
@@ -304,8 +310,9 @@ function AIChatbot() {
         });
       }
 
-      // Save AI Response to Firestore at the end
-      if (fullText.trim()) {
+      // Save AI Response to Firestore at the end if logged in
+      if (user && fullText.trim()) {
+        const messagesRef = collection(db, 'users', user.uid, 'messages');
         await addDoc(messagesRef, {
           role: 'model',
           text: fullText,
@@ -321,6 +328,10 @@ function AIChatbot() {
       // Handle Quota Exceeded (429)
       if (error?.message?.includes('RESOURCE_EXHAUSTED') || error?.status === 'RESOURCE_EXHAUSTED' || error?.code === 429) {
         errorMessage = "I'm currently receiving too many requests. Please wait a moment and try again.";
+      }
+
+      if (!user) {
+        setMessages(prev => [...prev, { role: 'model', text: errorMessage }]);
       }
 
       if (user) {
@@ -458,24 +469,7 @@ function AIChatbot() {
             </div>
             
             <div ref={scrollRef} className="flex-grow overflow-y-auto p-4 space-y-4 scrollbar-hide">
-              {!user ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6">
-                  <div className="bg-emerald-500/10 p-4 rounded-full mb-4">
-                    <ShieldCheck className="w-12 h-12 text-emerald-500" />
-                  </div>
-                  <h4 className="text-lg font-bold mb-2">Secure Chat History</h4>
-                  <p className="text-sm text-slate-400 mb-6 leading-relaxed">Sign in with Google to save your conversations and access advanced marketing insights.</p>
-                  <button 
-                    onClick={handleLogin}
-                    className="flex items-center gap-3 bg-white text-black px-6 py-3 rounded-full font-bold text-sm hover:bg-emerald-400 transition-all active:scale-95"
-                  >
-                    <LogIn className="w-4 h-4" /> Sign In with Google
-                  </button>
-                  {loginError && (
-                    <p className="mt-4 text-xs text-red-500 font-medium">{loginError}</p>
-                  )}
-                </div>
-              ) : isLiveMode ? (
+              {isLiveMode ? (
                 <LiveVoiceChat onClose={() => setIsLiveMode(false)} />
               ) : (
                 <>
@@ -483,7 +477,7 @@ function AIChatbot() {
                     <div className="space-y-4">
                       <div className="text-center text-slate-500 mt-10">
                         <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                        <p className="text-sm">Welcome, {user.displayName?.split(' ')[0]}!</p>
+                        <p className="text-sm">Welcome{user ? `, ${user.displayName?.split(' ')[0]}` : ''}!</p>
                       </div>
                       <div className="flex justify-start">
                         <div className="max-w-[80%] p-3 rounded-2xl text-sm bg-slate-800 text-slate-100 border border-slate-700/50">
@@ -522,7 +516,7 @@ function AIChatbot() {
             {!isLiveMode && (
               <div className="p-4 border-t border-slate-700/50 bg-[#1e293b] space-y-3">
                 <AnimatePresence>
-                  {showSuggestions && user && (
+                  {showSuggestions && (
                     <motion.div 
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
@@ -551,8 +545,8 @@ function AIChatbot() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    placeholder={user ? "Type a message..." : "Sign in to chat"}
-                    disabled={!user || isLoading}
+                    placeholder="Type a message..."
+                    disabled={isLoading}
                     className="flex-grow bg-[#0f172a] border border-slate-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-white placeholder:text-slate-500 disabled:opacity-50"
                   />
                   <button 
