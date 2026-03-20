@@ -219,14 +219,14 @@ function AIChatbot() {
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="bg-[#111111] border border-white/10 w-[350px] h-[500px] mb-4 flex flex-col overflow-hidden shadow-2xl rounded-[2rem]"
+            className="bg-[#0f172a] border border-slate-700/50 w-[350px] h-[500px] mb-4 flex flex-col overflow-hidden shadow-2xl rounded-[2rem]"
           >
-            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-zinc-900">
+            <div className="p-4 border-b border-slate-700/50 flex items-center justify-between bg-[#1e293b]">
               <div className="flex items-center gap-2">
                 <Bot className="w-5 h-5 text-emerald-400" />
-                <span className="font-bold text-sm">Marketing Assistant</span>
+                <span className="font-bold text-sm text-slate-100">Marketing Assistant</span>
               </div>
-              <button onClick={() => setIsOpen(false)} className="hover:text-emerald-400 transition-colors">
+              <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-emerald-400 transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -234,12 +234,12 @@ function AIChatbot() {
             <div ref={scrollRef} className="flex-grow overflow-y-auto p-4 space-y-4 scrollbar-hide">
               {messages.length === 0 && (
                 <div className="space-y-4">
-                  <div className="text-center text-slate-400 mt-10">
+                  <div className="text-center text-slate-500 mt-10">
                     <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-20" />
                     <p className="text-sm">Ask me about our services!</p>
                   </div>
                   <div className="flex justify-start">
-                    <div className="max-w-[80%] p-3 rounded-2xl text-sm bg-white/10 text-white">
+                    <div className="max-w-[80%] p-3 rounded-2xl text-sm bg-slate-800 text-slate-100 border border-slate-700/50">
                       Hi! I'm your Skyreach Marketing assistant. How can I help you today?
                     </div>
                   </div>
@@ -247,21 +247,21 @@ function AIChatbot() {
               )}
               {messages.map((m, i) => (
                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${m.role === 'user' ? 'bg-emerald-500 text-black' : 'bg-white/10 text-white'}`}>
+                  <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${m.role === 'user' ? 'bg-emerald-500 text-black font-medium' : 'bg-slate-800 text-slate-100 border border-slate-700/50'}`}>
                     {m.text}
                   </div>
                 </div>
               ))}
               {isLoading && (
                 <div className="flex justify-start">
-                  <div className="bg-white/10 p-3 rounded-2xl">
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                  <div className="bg-slate-800 p-3 rounded-2xl border border-slate-700/50">
+                    <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="p-4 border-t border-white/10 bg-zinc-900">
+            <div className="p-4 border-t border-slate-700/50 bg-[#1e293b]">
               <div className="flex gap-2">
                 <input 
                   type="text" 
@@ -269,12 +269,12 @@ function AIChatbot() {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                   placeholder="Type a message..."
-                  className="flex-grow bg-white/5 border border-white/10 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-white"
+                  className="flex-grow bg-[#0f172a] border border-slate-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-white placeholder:text-slate-500"
                 />
                 <button 
                   onClick={handleSend}
                   disabled={isLoading}
-                  className="bg-emerald-500 text-black p-2 rounded-full hover:bg-emerald-400 transition-colors disabled:opacity-50"
+                  className="bg-emerald-500 text-black p-2 rounded-full hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50 active:scale-95"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -1071,7 +1071,7 @@ export default function App() {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.5 }}
             onClick={scrollToTop}
-            className="fixed bottom-8 right-8 z-50 p-4 bg-white text-black rounded-full shadow-2xl hover:bg-emerald-500 transition-colors"
+            className="fixed bottom-28 right-8 z-50 p-4 bg-white text-black rounded-full shadow-2xl hover:bg-emerald-500 transition-colors"
           >
             <ArrowUp className="w-6 h-6" />
           </motion.button>
