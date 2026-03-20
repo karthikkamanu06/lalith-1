@@ -1,43 +1,56 @@
 {
   "entities": {
-    "Contact": {
-      "title": "Contact Form Submission",
-      "description": "Information from users who want to get in touch.",
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user profile information and preferences.",
       "type": "object",
       "properties": {
-        "name": { "type": "string", "description": "User's full name" },
-        "email": { "type": "string", "format": "email", "description": "User's email address" },
-        "message": { "type": "string", "description": "The message sent by the user" },
-        "createdAt": { "type": "string", "format": "date-time", "description": "When the message was sent" }
+        "uid": { "type": "string", "description": "Unique identifier for the user." },
+        "email": { "type": "string", "format": "email", "description": "User's email address." },
+        "displayName": { "type": "string", "description": "User's display name." },
+        "photoURL": { "type": "string", "description": "URL to the user's profile picture." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the user profile was created." },
+        "role": { "type": "string", "enum": ["admin", "user"], "description": "The role of the user." }
       },
-      "required": ["name", "email", "message", "createdAt"]
+      "required": ["uid", "email", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "Chat Message",
+      "description": "A single message in a chat conversation.",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["user", "model"], "description": "The role of the message sender." },
+        "text": { "type": "string", "description": "The content of the message." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the message was sent." }
+      },
+      "required": ["role", "text", "timestamp"]
     },
     "Project": {
       "title": "Portfolio Project",
-      "description": "A project showcased in the portfolio.",
+      "description": "A project in the digital marketing portfolio.",
       "type": "object",
       "properties": {
-        "title": { "type": "string", "description": "Project title" },
-        "description": { "type": "string", "description": "Project description" },
-        "result": { "type": "string", "description": "The outcome of the project" },
-        "strategies": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "SEO strategies used"
-        },
-        "order": { "type": "integer", "description": "Display order" }
+        "title": { "type": "string", "description": "Project title." },
+        "description": { "type": "string", "description": "Project description." },
+        "strategies": { "type": "array", "items": { "type": "string" }, "description": "Marketing strategies used." },
+        "result": { "type": "string", "description": "The impact or result of the project." },
+        "order": { "type": "number", "description": "Display order." }
       },
-      "required": ["title", "description", "result", "strategies", "order"]
+      "required": ["title", "description", "strategies", "result", "order"]
     }
   },
   "firestore": {
-    "contacts/{contactId}": {
-      "schema": "Contact",
-      "description": "Collection of contact form submissions"
-    },
-    "projects/{projectId}": {
+    "/projects/{projectId}": {
       "schema": "Project",
-      "description": "Collection of portfolio projects"
+      "description": "Portfolio projects."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile document."
+    },
+    "/users/{userId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Messages in the user's chat history."
     }
   }
 }

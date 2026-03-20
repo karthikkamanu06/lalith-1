@@ -1,5 +1,5 @@
 {
   "name": "Skyreach Marketing",
   "description": "Professional portfolio of Skyreach Marketing, specializing in SEO, Social Media Marketing, and Paid Ads.",
-  "requestFramePermissions": []
+  "requestFramePermissions": ["camera", "microphone"]
 }

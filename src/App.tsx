@@ -35,7 +35,12 @@ import {
   X,
   Bot,
   BrainCircuit,
-  Lightbulb
+  Lightbulb,
+  Mic,
+  Volume2,
+  Brain,
+  History,
+  User as UserIcon
 } from 'lucide-react';
 import { 
   db, 
@@ -47,11 +52,15 @@ import {
   orderBy, 
   onSnapshot, 
   signInWithPopup, 
-  signOut 
+  signOut,
+  serverTimestamp,
+  limit,
+  doc,
+  setDoc
 } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { Timestamp } from 'firebase/firestore';
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel, Modality } from "@google/genai";
 
 // Error handling helper
 enum OperationType {
@@ -150,136 +159,403 @@ const staggerContainer = {
 // AI Chatbot Component
 function AIChatbot() {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<{ role: 'user' | 'model'; text: string }[]>([]);
+  const [messages, setMessages] = useState<{ role: 'user' | 'model'; text: string; id?: string }[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [cache, setCache] = useState<Record<string, string>>({});
+  const [isThinking, setIsThinking] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(true);
+  const [isLiveMode, setIsLiveMode] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore Messages Listener
+  useEffect(() => {
+    if (!user || !isOpen || isLiveMode) return;
+
+    const messagesRef = collection(db, 'users', user.uid, 'messages');
+    const q = query(messagesRef, orderBy('timestamp', 'asc'), limit(50));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        role: doc.data().role as 'user' | 'model',
+        text: doc.data().text
+      }));
+      
+      setMessages(prev => {
+        const lastLocal = prev[prev.length - 1];
+        if (lastLocal && lastLocal.role === 'model' && !lastLocal.id) {
+          const lastFirestore = msgs[msgs.length - 1];
+          if (lastFirestore && lastFirestore.role === 'model') {
+            return msgs;
+          }
+          return [...msgs, lastLocal];
+        }
+        return msgs;
+      });
+
+      if (msgs.length > 0) setShowSuggestions(false);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, `users/${user.uid}/messages`);
+    });
+
+    return () => unsubscribe();
+  }, [user, isOpen, isLiveMode]);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, isLoading, isThinking]);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-    
-    const userMsg = input.trim();
-    const normalizedMsg = userMsg.toLowerCase().trim();
-    
-    // Check cache for exact matches (simple caching)
-    if (cache[normalizedMsg]) {
-      setInput('');
-      setMessages(prev => [...prev, { role: 'user' as const, text: userMsg }, { role: 'model' as const, text: cache[normalizedMsg] }]);
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      console.error("Login failed:", err);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
+  };
+
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || isLoading) return;
+    if (!user) {
+      handleLogin();
       return;
     }
-
-    setInput('');
-    const newMessages = [...messages, { role: 'user' as const, text: userMsg }];
-    setMessages(newMessages);
-    setIsLoading(true);
-
+    
+    setShowSuggestions(false);
+    const userMsg = text.trim();
+    
     try {
-      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      // Save User Message to Firestore
+      const messagesRef = collection(db, 'users', user.uid, 'messages');
+      await addDoc(messagesRef, {
+        role: 'user',
+        text: userMsg,
+        timestamp: serverTimestamp()
+      });
+
+      setIsLoading(true);
+      setIsThinking(true);
+
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
       
-      // Limit history to last 10 messages for efficiency
-      const history = newMessages.slice(-10).map(m => ({
+      const history = messages.slice(-10).map(m => ({
         role: m.role,
         parts: [{ text: m.text }]
       }));
 
-      const response = await genAI.models.generateContent({
-        model: "gemini-3-flash-preview",
+      // Add current message to history
+      history.push({ role: 'user', parts: [{ text: userMsg }] });
+
+      const streamResponse = await ai.models.generateContentStream({
+        model: "gemini-3.1-pro-preview",
         contents: history,
         config: {
           systemInstruction: "You are an AI assistant for Skyreach Marketing's digital marketing portfolio. You help users understand our services (SEO, Social Media, Ads, Canva, Content Writing). Be professional, helpful, and concise. Our contact email is skyreachmarketing.11@gmail.com and our Instagram is @skyreach.marketing.",
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+          thinkingConfig: { 
+            thinkingLevel: ThinkingLevel.HIGH 
+          }
         }
       });
-      
-      const botText = response.text || "I'm sorry, I couldn't process that.";
-      setMessages(prev => [...prev, { role: 'model', text: botText }]);
-      
-      // Cache the response
-      setCache(prev => ({ ...prev, [normalizedMsg]: botText }));
+
+      let fullText = "";
+
+      for await (const chunk of streamResponse) {
+        setIsThinking(false);
+        const chunkText = chunk.text || "";
+        fullText += chunkText;
+
+        // Optimistic UI update for streaming
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'model' && !last.id) {
+            return [...prev.slice(0, -1), { role: 'model', text: fullText }];
+          }
+          return [...prev, { role: 'model', text: fullText }];
+        });
+      }
+
+      // Save AI Response to Firestore at the end
+      if (fullText.trim()) {
+        await addDoc(messagesRef, {
+          role: 'model',
+          text: fullText,
+          timestamp: serverTimestamp()
+        });
+      }
     } catch (error) {
       console.error("Chat error:", error);
-      setMessages(prev => [...prev, { role: 'model', text: "Oops! Something went wrong. Please try again." }]);
+      setIsThinking(false);
+      if (user) {
+        const messagesRef = collection(db, 'users', user.uid, 'messages');
+        await addDoc(messagesRef, {
+          role: 'model',
+          text: "Oops! Something went wrong. Please try again.",
+          timestamp: serverTimestamp()
+        });
+      }
     } finally {
       setIsLoading(false);
+      setIsThinking(false);
     }
   };
 
+  const playTTS = async (text: string) => {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: `Read this professionally: ${text}` }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Kore' },
+            },
+          },
+        },
+      });
+
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        try {
+          const binaryString = window.atob(base64Audio);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const audioBlob = new Blob([bytes], { type: 'audio/mp3' });
+          const audioUrl = URL.createObjectURL(audioBlob);
+          
+          if (audioRef.current) {
+            // Clean up previous URL if it exists
+            if (audioRef.current.src) {
+              URL.revokeObjectURL(audioRef.current.src);
+            }
+            audioRef.current.src = audioUrl;
+            audioRef.current.oncanplaythrough = () => {
+              audioRef.current?.play().catch(e => console.error("Playback failed:", e));
+            };
+            audioRef.current.onerror = (e) => {
+              console.error("Audio element error:", e);
+            };
+          }
+        } catch (convError) {
+          console.error("Audio conversion error:", convError);
+        }
+      }
+    } catch (error) {
+      console.error("TTS error:", error);
+    }
+  };
+
+  const handleSend = () => {
+    sendMessage(input);
+    setInput('');
+  };
+
+  const marketingTips = [
+    "SEO drives 1000%+ more traffic than social.",
+    "70% of users focus on organic results.",
+    "Video is 50x more likely to drive SEO results.",
+    "Personalization improves CTR by 14%.",
+    "Blogging generates 67% more leads.",
+    "Mobile accounts for 50%+ of web traffic.",
+    "Social ads reach 3.8B people.",
+    "Content can boost traffic by 2,000%."
+  ];
+
+  const suggestedPrompts = [
+    { text: "Tell me about SEO", tip: marketingTips[0] },
+    { text: "What services do you offer?", tip: marketingTips[1] },
+    { text: "How can I contact you?", tip: marketingTips[2] },
+    { text: "Show me your projects", tip: marketingTips[3] }
+  ];
+
+  const [activePrompts, setActivePrompts] = useState(suggestedPrompts);
+
+  useEffect(() => {
+    if (isOpen) {
+      const shuffledTips = [...marketingTips].sort(() => 0.5 - Math.random());
+      const prompts = [
+        { text: "Tell me about SEO", tip: shuffledTips[0] },
+        { text: "What services do you offer?", tip: shuffledTips[1] },
+        { text: "How can I contact you?", tip: shuffledTips[2] },
+        { text: "Show me your projects", tip: shuffledTips[3] }
+      ];
+      setActivePrompts(prompts);
+    }
+  }, [isOpen]);
+
   return (
     <div className="fixed bottom-8 right-8 z-50">
+      <audio ref={audioRef} className="hidden" />
       <AnimatePresence>
         {isOpen && (
           <motion.div 
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="bg-[#0f172a] border border-slate-700/50 w-[350px] h-[500px] mb-4 flex flex-col overflow-hidden shadow-2xl rounded-[2rem]"
+            className="bg-[#0f172a] border border-slate-700/50 w-[380px] h-[600px] mb-4 flex flex-col overflow-hidden shadow-2xl rounded-[2rem]"
           >
             <div className="p-4 border-b border-slate-700/50 flex items-center justify-between bg-[#1e293b]">
               <div className="flex items-center gap-2">
                 <Bot className="w-5 h-5 text-emerald-400" />
-                <span className="font-bold text-sm text-slate-100">Marketing Assistant</span>
+                <div className="flex flex-col">
+                  <span className="font-bold text-sm text-slate-100">Marketing Assistant Pro</span>
+                  <span className="text-[10px] text-emerald-400/70 font-medium uppercase tracking-tighter">Powered by Gemini 3.1 Pro</span>
+                </div>
               </div>
-              <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-emerald-400 transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div ref={scrollRef} className="flex-grow overflow-y-auto p-4 space-y-4 scrollbar-hide">
-              {messages.length === 0 && (
-                <div className="space-y-4">
-                  <div className="text-center text-slate-500 mt-10">
-                    <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                    <p className="text-sm">Ask me about our services!</p>
-                  </div>
-                  <div className="flex justify-start">
-                    <div className="max-w-[80%] p-3 rounded-2xl text-sm bg-slate-800 text-slate-100 border border-slate-700/50">
-                      Hi! I'm your Skyreach Marketing assistant. How can I help you today?
-                    </div>
-                  </div>
-                </div>
-              )}
-              {messages.map((m, i) => (
-                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${m.role === 'user' ? 'bg-emerald-500 text-black font-medium' : 'bg-slate-800 text-slate-100 border border-slate-700/50'}`}>
-                    {m.text}
-                  </div>
-                </div>
-              ))}
-              {isLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-slate-800 p-3 rounded-2xl border border-slate-700/50">
-                    <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 border-t border-slate-700/50 bg-[#1e293b]">
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                  placeholder="Type a message..."
-                  className="flex-grow bg-[#0f172a] border border-slate-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-white placeholder:text-slate-500"
-                />
+              <div className="flex items-center gap-2">
                 <button 
-                  onClick={handleSend}
-                  disabled={isLoading}
-                  className="bg-emerald-500 text-black p-2 rounded-full hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50 active:scale-95"
+                  onClick={() => setIsLiveMode(!isLiveMode)}
+                  className={`p-2 rounded-lg transition-all ${isLiveMode ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-400 hover:text-slate-200'}`}
+                  title="Live Voice Mode"
                 >
-                  <Send className="w-4 h-4" />
+                  <Mic className="w-4 h-4" />
+                </button>
+                <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-emerald-400 transition-colors">
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
+            
+            <div ref={scrollRef} className="flex-grow overflow-y-auto p-4 space-y-4 scrollbar-hide">
+              {!user ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6">
+                  <div className="bg-emerald-500/10 p-4 rounded-full mb-4">
+                    <ShieldCheck className="w-12 h-12 text-emerald-500" />
+                  </div>
+                  <h4 className="text-lg font-bold mb-2">Secure Chat History</h4>
+                  <p className="text-sm text-slate-400 mb-6 leading-relaxed">Sign in with Google to save your conversations and access advanced marketing insights.</p>
+                  <button 
+                    onClick={handleLogin}
+                    className="flex items-center gap-3 bg-white text-black px-6 py-3 rounded-full font-bold text-sm hover:bg-emerald-400 transition-all active:scale-95"
+                  >
+                    <LogIn className="w-4 h-4" /> Sign In with Google
+                  </button>
+                </div>
+              ) : isLiveMode ? (
+                <LiveVoiceChat onClose={() => setIsLiveMode(false)} />
+              ) : (
+                <>
+                  {messages.length === 0 && (
+                    <div className="space-y-4">
+                      <div className="text-center text-slate-500 mt-10">
+                        <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                        <p className="text-sm">Welcome, {user.displayName?.split(' ')[0]}!</p>
+                      </div>
+                      <div className="flex justify-start">
+                        <div className="max-w-[80%] p-3 rounded-2xl text-sm bg-slate-800 text-slate-100 border border-slate-700/50">
+                          Hi! I'm your Skyreach Marketing assistant. How can I help you today?
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {messages.map((m, i) => (
+                    <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                      <div className={`max-w-[85%] p-3 rounded-2xl text-sm relative group ${m.role === 'user' ? 'bg-emerald-500 text-black font-medium rounded-tr-none' : 'bg-slate-800 text-slate-100 border border-slate-700/50 rounded-tl-none'}`}>
+                        {m.text}
+                        {m.role === 'model' && (
+                          <button 
+                            onClick={() => playTTS(m.text)}
+                            className="absolute -right-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-500 hover:text-emerald-400"
+                          >
+                            <Volume2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {isThinking && (
+                    <div className="flex justify-start">
+                      <div className="bg-purple-500/10 border border-purple-500/20 p-3 rounded-2xl rounded-tl-none flex items-center gap-3">
+                        <Brain className="w-4 h-4 text-purple-400 animate-pulse" />
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-purple-400">Thinking...</span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {!isLiveMode && (
+              <div className="p-4 border-t border-slate-700/50 bg-[#1e293b] space-y-3">
+                <AnimatePresence>
+                  {showSuggestions && user && (
+                    <motion.div 
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0, marginBottom: 0 }}
+                      className="space-y-2 overflow-hidden"
+                    >
+                      <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider px-1">Did you know?</p>
+                      <div className="flex flex-col gap-2">
+                        {activePrompts.map((prompt, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => sendMessage(prompt.text)}
+                            className="text-[10px] bg-[#0f172a] border border-slate-700 text-slate-300 px-3 py-2 rounded-xl hover:border-emerald-500 hover:text-emerald-400 transition-all text-left group"
+                          >
+                            <span className="text-slate-500 group-hover:text-emerald-500/50 transition-colors block mb-0.5">{prompt.tip}</span>
+                            <span className="font-medium text-slate-100 group-hover:text-emerald-400 transition-colors">"{prompt.text}"</span>
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    placeholder={user ? "Type a message..." : "Sign in to chat"}
+                    disabled={!user || isLoading}
+                    className="flex-grow bg-[#0f172a] border border-slate-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-white placeholder:text-slate-500 disabled:opacity-50"
+                  />
+                  <button 
+                    onClick={handleSend}
+                    disabled={isLoading || !user}
+                    className="bg-emerald-500 text-black p-2 rounded-full hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50 active:scale-95"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+                {user && (
+                  <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center gap-2">
+                      <img src={user.photoURL || ''} alt="" className="w-4 h-4 rounded-full border border-white/10" />
+                      <span className="text-[10px] text-slate-500">{user.email}</span>
+                    </div>
+                    <button onClick={handleLogout} className="text-[10px] text-slate-500 hover:text-red-400 transition-colors flex items-center gap-1">
+                      <LogOut className="w-3 h-3" /> Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -288,10 +564,161 @@ function AIChatbot() {
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
         onClick={() => setIsOpen(!isOpen)}
-        className="bg-emerald-500 text-black p-4 rounded-full shadow-2xl shadow-emerald-500/20 hover:bg-emerald-400 transition-colors"
+        className="bg-emerald-500 text-black p-4 rounded-full shadow-2xl shadow-emerald-500/20 hover:bg-emerald-400 transition-colors relative"
       >
         <MessageSquare className="w-6 h-6" />
+        {user && (
+          <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-400 rounded-full border-2 border-[#050505] flex items-center justify-center">
+            <div className="w-1.5 h-1.5 bg-black rounded-full animate-pulse" />
+          </div>
+        )}
       </motion.button>
+    </div>
+  );
+}
+
+// Live Voice Chat Component
+function LiveVoiceChat({ onClose }: { onClose: () => void }) {
+  const [status, setStatus] = useState<'idle' | 'connecting' | 'active' | 'interrupted'>('idle');
+  const [transcript, setTranscript] = useState<string>('');
+  const sessionRef = useRef<any>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+
+  const startLiveSession = async () => {
+    setStatus('connecting');
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const session = await ai.live.connect({
+        model: "gemini-2.5-flash-native-audio-preview-12-2025",
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
+          },
+          systemInstruction: "You are a helpful marketing assistant. Speak naturally and concisely.",
+        },
+        callbacks: {
+          onopen: () => {
+            setStatus('active');
+            setupAudio();
+          },
+          onmessage: async (message) => {
+            if (message.serverContent?.modelTurn?.parts[0]?.inlineData?.data) {
+              const base64Audio = message.serverContent.modelTurn.parts[0].inlineData.data;
+              playAudioChunk(base64Audio);
+            }
+            if (message.serverContent?.interrupted) {
+              setStatus('interrupted');
+              setTimeout(() => setStatus('active'), 1000);
+            }
+          },
+          onclose: () => {
+            cleanup();
+            onClose();
+          },
+          onerror: (err) => {
+            console.error("Live API error:", err);
+            cleanup();
+            onClose();
+          }
+        }
+      });
+      sessionRef.current = session;
+    } catch (error) {
+      console.error("Failed to connect to Live API:", error);
+      onClose();
+    }
+  };
+
+  const setupAudio = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      processorRef.current = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+
+      processorRef.current.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        const pcmData = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+        }
+        const base64Data = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
+        sessionRef.current?.sendRealtimeInput({
+          audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
+        });
+      };
+
+      source.connect(processorRef.current);
+      processorRef.current.connect(audioContextRef.current.destination);
+    } catch (error) {
+      console.error("Audio setup error:", error);
+    }
+  };
+
+  const playAudioChunk = (base64Data: string) => {
+    const binaryString = atob(base64Data);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const pcmData = new Int16Array(bytes.buffer);
+    const floatData = new Float32Array(pcmData.length);
+    for (let i = 0; i < pcmData.length; i++) {
+      floatData[i] = pcmData[i] / 0x7FFF;
+    }
+
+    if (audioContextRef.current) {
+      const buffer = audioContextRef.current.createBuffer(1, floatData.length, 16000);
+      buffer.getChannelData(0).set(floatData);
+      const source = audioContextRef.current.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioContextRef.current.destination);
+      source.start();
+    }
+  };
+
+  const cleanup = () => {
+    processorRef.current?.disconnect();
+    audioContextRef.current?.close();
+    sessionRef.current?.close();
+  };
+
+  useEffect(() => {
+    startLiveSession();
+    return () => cleanup();
+  }, []);
+
+  return (
+    <div className="h-full flex flex-col items-center justify-center p-8 bg-emerald-500/5">
+      <div className="relative mb-12">
+        <div className={`absolute -inset-8 rounded-full blur-3xl transition-all duration-1000 ${status === 'active' ? 'bg-emerald-500/20 animate-pulse' : 'bg-slate-500/10'}`} />
+        <div className={`w-32 h-32 rounded-full flex items-center justify-center border-4 transition-all duration-500 ${status === 'active' ? 'border-emerald-500 bg-emerald-500/10' : 'border-slate-700 bg-slate-800'}`}>
+          {status === 'connecting' ? (
+            <Loader2 className="w-12 h-12 text-emerald-400 animate-spin" />
+          ) : (
+            <Mic className={`w-12 h-12 ${status === 'active' ? 'text-emerald-400' : 'text-slate-500'}`} />
+          )}
+        </div>
+      </div>
+      
+      <div className="text-center space-y-4">
+        <h4 className="text-xl font-bold text-emerald-400">
+          {status === 'connecting' ? 'Connecting...' : status === 'active' ? 'Live Voice Active' : 'Interrupted'}
+        </h4>
+        <p className="text-sm text-slate-400 max-w-[200px] mx-auto">
+          {status === 'active' ? 'Speak naturally. I am listening to your marketing questions.' : 'Please wait while we establish a secure voice link.'}
+        </p>
+      </div>
+
+      <button 
+        onClick={onClose}
+        className="mt-12 text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-red-400 transition-colors"
+      >
+        End Voice Session
+      </button>
     </div>
   );
 }
@@ -416,6 +843,23 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [copiedProject, setCopiedProject] = useState<string | null>(null);
+
+  const slugify = (text: string) => {
+    return text
+      .toLowerCase()
+      .replace(/[^\w ]+/g, '')
+      .replace(/ +/g, '-');
+  };
+
+  const handleShare = (title: string) => {
+    const slug = slugify(title);
+    const url = `${window.location.origin}${window.location.pathname}#${slug}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedProject(title);
+      setTimeout(() => setCopiedProject(null), 2000);
+    });
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -834,13 +1278,36 @@ export default function App() {
             {projects.map((project, index) => (
               <motion.div 
                 key={index}
+                id={slugify(project.title)}
                 initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                className="group glass-card p-10 flex flex-col h-full hover:border-emerald-500/50 transition-all duration-500"
+                className="group glass-card p-10 flex flex-col h-full hover:border-emerald-500/50 transition-all duration-500 scroll-mt-32"
               >
                 <div className="flex-grow">
-                  <h3 className="text-3xl font-bold mb-6 group-hover:text-emerald-400 transition-colors">{project.title}</h3>
+                  <div className="flex justify-between items-start mb-6">
+                    <h3 className="text-3xl font-bold group-hover:text-emerald-400 transition-colors">{project.title}</h3>
+                    <button 
+                      onClick={() => handleShare(project.title)}
+                      className="p-2 rounded-full bg-white/5 hover:bg-emerald-500/20 hover:text-emerald-400 transition-all border border-white/10 relative group/share"
+                      title="Share Project"
+                    >
+                      {copiedProject === project.title ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <Share2 className="w-4 h-4" />
+                      )}
+                      {copiedProject === project.title && (
+                        <motion.span 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="absolute -top-10 left-1/2 -translate-x-1/2 bg-emerald-500 text-black text-[10px] font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap"
+                        >
+                          Copied!
+                        </motion.span>
+                      )}
+                    </button>
+                  </div>
                   <p className="text-slate-400 mb-8 leading-relaxed text-lg font-light">{project.description}</p>
                   
                   <div className="mb-10">

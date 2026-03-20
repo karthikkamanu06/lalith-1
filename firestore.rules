@@ -1,25 +1,35 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
     // ===============================================================
     // Assumed Data Model
     // ===============================================================
     //
-    // Collection: contacts
-    // Document ID: auto-generated
+    // Collection: users
+    // Document ID: {userId}
     // Fields:
-    //   - name: string (required, 1-100 chars)
-    //   - email: string (required, valid email format)
-    //   - message: string (required, 1-2000 chars)
+    //   - uid: string (required)
+    //   - email: string (required, email format)
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional)
     //   - createdAt: timestamp (required)
+    //   - role: string (optional, enum: ['admin', 'user'])
+    //
+    // Collection: users/{userId}/messages
+    // Document ID: {messageId}
+    // Fields:
+    //   - role: string (required, enum: ['user', 'model'])
+    //   - text: string (required, max 5000 chars)
+    //   - timestamp: timestamp (required)
     //
     // Collection: projects
-    // Document ID: auto-generated
+    // Document ID: {projectId}
     // Fields:
     //   - title: string (required)
     //   - description: string (required)
+    //   - strategies: list (required)
     //   - result: string (required)
-    //   - strategies: list of strings (required)
     //   - order: number (required)
     //
     // ===============================================================
@@ -27,8 +37,13 @@ service cloud.firestore {
     // ===============================================================
     // Helper Functions
     // ===============================================================
+    
     function isAuthenticated() {
       return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
     function isAdmin() {
@@ -41,33 +56,33 @@ service cloud.firestore {
       return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
     }
 
-    function hasRequiredFields(fields) {
-      return request.resource.data.keys().hasAll(fields);
+    function isRecent(time) {
+      return time is timestamp &&
+             time > request.time - duration.value(5, 'm') &&
+             time < request.time + duration.value(5, 'm');
     }
 
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
-    }
-
-    // ===============================================================
-    // Domain Validators
-    // ===============================================================
-    function isValidContact(data) {
-      return hasRequiredFields(['name', 'email', 'message', 'createdAt']) &&
-             hasOnlyAllowedFields(['name', 'email', 'message', 'createdAt']) &&
-             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt']) &&
+             data.uid == request.auth.uid &&
              isValidEmail(data.email) &&
-             data.message is string && data.message.size() >= 1 && data.message.size() <= 2000 &&
-             data.createdAt is timestamp;
+             data.createdAt is timestamp &&
+             (!('role' in data) || data.role in ['admin', 'user']);
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['role', 'text', 'timestamp']) &&
+             data.role in ['user', 'model'] &&
+             data.text is string && data.text.size() <= 5000 &&
+             data.timestamp is timestamp;
     }
 
     function isValidProject(data) {
-      return hasRequiredFields(['title', 'description', 'result', 'strategies', 'order']) &&
-             hasOnlyAllowedFields(['title', 'description', 'result', 'strategies', 'order']) &&
-             data.title is string &&
-             data.description is string &&
-             data.result is string &&
+      return data.keys().hasAll(['title', 'description', 'strategies', 'result', 'order']) &&
+             data.title is string && data.title.size() > 0 &&
+             data.description is string && data.description.size() > 0 &&
              data.strategies is list &&
+             data.result is string &&
              data.order is number;
     }
 
@@ -75,21 +90,29 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
-    // Contacts: Anyone can create, only admin can read
-    match /contacts/{contactId} {
-      allow create: if isValidContact(request.resource.data);
-      allow read, update, delete: if isAdmin();
-    }
-
-    // Projects: Anyone can read, only admin can write
     match /projects/{projectId} {
       allow read: if true;
-      allow write: if isAdmin() && isValidProject(request.resource.data);
+      allow write: if isAdmin();
     }
 
-    // Users: Users can read/write their own profile, admin can do anything
     match /users/{userId} {
-      allow read, write: if request.auth.uid == userId || isAdmin();
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && 
+                      (!('role' in request.resource.data) || request.resource.data.role == 'user');
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && 
+                        request.resource.data.createdAt == resource.data.createdAt &&
+                        request.resource.data.role == resource.data.role) || isAdmin();
+      
+      match /messages/{messageId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidMessage(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
