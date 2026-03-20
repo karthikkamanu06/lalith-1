@@ -53,9 +53,6 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { Timestamp } from 'firebase/firestore';
 import { GoogleGenAI } from "@google/genai";
 
-// Initialize Gemini
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-
 // Error handling helper
 enum OperationType {
   CREATE = 'create',
@@ -169,15 +166,21 @@ function AIChatbot() {
     
     const userMsg = input.trim();
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    const newMessages = [...messages, { role: 'user' as const, text: userMsg }];
+    setMessages(newMessages);
     setIsLoading(true);
 
     try {
-      const response = await ai.models.generateContent({
+      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      
+      const response = await genAI.models.generateContent({
         model: "gemini-3.1-pro-preview",
-        contents: [...messages.map(m => ({ role: m.role, parts: [{ text: m.text }] })), { role: 'user', parts: [{ text: userMsg }] }],
+        contents: newMessages.map(m => ({
+          role: m.role,
+          parts: [{ text: m.text }]
+        })),
         config: {
-          systemInstruction: "You are an AI assistant for Skyreach Marketing's digital marketing portfolio. You help users understand our services (SEO, Social Media, Ads, Canva, Content Writing). Be professional, helpful, and concise. Our contact email is skyreachmarketing.11@gmail.com and our Instagram is @skyreachmarketing.11.",
+          systemInstruction: "You are an AI assistant for Skyreach Marketing's digital marketing portfolio. You help users understand our services (SEO, Social Media, Ads, Canva, Content Writing). Be professional, helpful, and concise. Our contact email is skyreachmarketing.11@gmail.com and our Instagram is @skyreach.marketing.",
         }
       });
       
@@ -213,9 +216,16 @@ function AIChatbot() {
             
             <div ref={scrollRef} className="flex-grow overflow-y-auto p-4 space-y-4 scrollbar-hide">
               {messages.length === 0 && (
-                <div className="text-center text-slate-400 mt-10">
-                  <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                  <p className="text-sm">Ask me about our services!</p>
+                <div className="space-y-4">
+                  <div className="text-center text-slate-400 mt-10">
+                    <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                    <p className="text-sm">Ask me about our services!</p>
+                  </div>
+                  <div className="flex justify-start">
+                    <div className="max-w-[80%] p-3 rounded-2xl text-sm bg-white/10 text-white">
+                      Hi! I'm your Skyreach Marketing assistant. How can I help you today?
+                    </div>
+                  </div>
                 </div>
               )}
               {messages.map((m, i) => (
@@ -277,7 +287,8 @@ function MarketingInsights() {
   const fetchInsight = async () => {
     setIsLoading(true);
     try {
-      const response = await ai.models.generateContent({
+      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const response = await genAI.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: "What are the top 3 digital marketing trends for 2024? Provide a very brief, punchy summary.",
         config: {
@@ -335,7 +346,8 @@ function QuickTips() {
   const getTip = async () => {
     setIsLoading(true);
     try {
-      const response = await ai.models.generateContent({
+      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const response = await genAI.models.generateContent({
         model: "gemini-3.1-flash-lite-preview",
         contents: "Give me one quick, actionable digital marketing tip for a small business owner. Max 15 words.",
       });
@@ -909,7 +921,7 @@ export default function App() {
                 
                 <div className="flex gap-4">
                   {[
-                    { Icon: Instagram, href: "https://www.instagram.com/skyreachmarketing.11/" },
+                    { Icon: Instagram, href: "https://www.instagram.com/skyreach.marketing?igsh=MXJwZmI1YzFhdXowNw%3D%3D" },
                     { Icon: Facebook, href: "https://www.facebook.com/profile.php?id=61574345203399" },
                     { Icon: Globe, href: "https://skyreachmarketing.com" }
                   ].map(({ Icon, href }, i) => (
