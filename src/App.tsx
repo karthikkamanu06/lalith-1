@@ -219,9 +219,9 @@ function AIChatbot() {
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="glass-card w-[350px] h-[500px] mb-4 flex flex-col overflow-hidden shadow-2xl"
+            className="bg-[#111111] border border-white/10 w-[350px] h-[500px] mb-4 flex flex-col overflow-hidden shadow-2xl rounded-[2rem]"
           >
-            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-emerald-500/10">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-zinc-900">
               <div className="flex items-center gap-2">
                 <Bot className="w-5 h-5 text-emerald-400" />
                 <span className="font-bold text-sm">Marketing Assistant</span>
@@ -261,7 +261,7 @@ function AIChatbot() {
               )}
             </div>
 
-            <div className="p-4 border-t border-white/10">
+            <div className="p-4 border-t border-white/10 bg-zinc-900">
               <div className="flex gap-2">
                 <input 
                   type="text" 
@@ -269,7 +269,7 @@ function AIChatbot() {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                   placeholder="Type a message..."
-                  className="flex-grow bg-white/5 border border-white/10 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors"
+                  className="flex-grow bg-white/5 border border-white/10 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors text-white"
                 />
                 <button 
                   onClick={handleSend}
