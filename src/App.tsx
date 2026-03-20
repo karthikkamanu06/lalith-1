@@ -277,12 +277,12 @@ function AIChatbot() {
       history.push({ role: 'user', parts: [{ text: userMsg }] });
 
       const streamResponse = await ai.models.generateContentStream({
-        model: "gemini-3.1-pro-preview",
+        model: "gemini-3-flash-preview",
         contents: history,
         config: {
           systemInstruction: "You are an AI assistant for Skyreach Marketing's digital marketing portfolio. You help users understand our services (SEO, Social Media, Ads, Canva, Content Writing). Be professional, helpful, and concise. Our contact email is skyreachmarketing.11@gmail.com and our Instagram is @skyreach.marketing.",
           thinkingConfig: { 
-            thinkingLevel: ThinkingLevel.HIGH 
+            thinkingLevel: ThinkingLevel.LOW 
           }
         }
       });
@@ -312,14 +312,22 @@ function AIChatbot() {
           timestamp: serverTimestamp()
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Chat error:", error);
       setIsThinking(false);
+      
+      let errorMessage = "Oops! Something went wrong. Please try again.";
+      
+      // Handle Quota Exceeded (429)
+      if (error?.message?.includes('RESOURCE_EXHAUSTED') || error?.status === 'RESOURCE_EXHAUSTED' || error?.code === 429) {
+        errorMessage = "I'm currently receiving too many requests. Please wait a moment and try again.";
+      }
+
       if (user) {
         const messagesRef = collection(db, 'users', user.uid, 'messages');
         await addDoc(messagesRef, {
           role: 'model',
-          text: "Oops! Something went wrong. Please try again.",
+          text: errorMessage,
           timestamp: serverTimestamp()
         });
       }
@@ -753,9 +761,13 @@ function MarketingInsights() {
         }
       });
       setInsight(response.text || "Stay ahead with data-driven strategies.");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Insight error:", error);
-      setInsight("Focus on personalized content and AI integration.");
+      if (error?.message?.includes('RESOURCE_EXHAUSTED') || error?.status === 'RESOURCE_EXHAUSTED' || error?.code === 429) {
+        setInsight("I'm currently receiving too many requests. Please try again later.");
+      } else {
+        setInsight("Focus on personalized content and AI integration.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -812,8 +824,12 @@ function QuickTips() {
         }
       });
       setTip(response.text || "Optimize your Google Business Profile.");
-    } catch (error) {
-      setTip("Focus on high-quality visual content.");
+    } catch (error: any) {
+      if (error?.message?.includes('RESOURCE_EXHAUSTED') || error?.status === 'RESOURCE_EXHAUSTED' || error?.code === 429) {
+        setTip("System busy. Try again later.");
+      } else {
+        setTip("Focus on high-quality visual content.");
+      }
     } finally {
       setIsLoading(false);
     }
